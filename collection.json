@@ -1,0 +1,259 @@
+{
+	"info": {
+		"_postman_id": "29983da4-c98c-4f2d-89b9-93e3bed01eac",
+		"name": "lab6web",
+		"description": "### Welcome to Postman! This is your first collection. \n\nCollections are your starting point for building and testing APIs. You can use this one to:\n\n• Group related requests\n• Test your API in real-world scenarios\n• Document and share your requests\n\nUpdate the name and overview whenever you’re ready to make it yours.\n\n[Learn more about Postman Collections.](https://learning.postman.com/docs/collections/collections-overview/)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "50176865",
+		"_collection_link": "https://krichiii-3902980.postman.co/workspace/Stanislav_Krichfalovshii's-Work~fc0f0db5-bbe0-4534-887f-aebcad651801/collection/50176865-29983da4-c98c-4f2d-89b9-93e3bed01eac?action=share&source=collection_link&creator=50176865"
+	},
+	"item": [
+		{
+			"name": "register",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "inventory_name",
+							"value": "Laptop A",
+							"type": "text"
+						},
+						{
+							"key": "description",
+							"value": "Office machine",
+							"type": "text"
+						},
+						{
+							"key": "photo",
+							"type": "file",
+							"src": "/home/krichi/bc2025-6/out.jpg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://127.0.0.1:3000/register",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"register"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "inventory",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:3000/inventory",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"inventory"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "inventory_by_id",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:3000/inventory/fb983d7a-7669-4add-b9a1-9c145921baba",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"fb983d7a-7669-4add-b9a1-9c145921baba"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "redact_text",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"name\":\"Updated Laptop\", \"description\":\"Updated description\"}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:3000/inventory/fb983d7a-7669-4add-b9a1-9c145921baba",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"fb983d7a-7669-4add-b9a1-9c145921baba"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "photo",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:3000/inventory/fb983d7a-7669-4add-b9a1-9c145921baba/photo",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"fb983d7a-7669-4add-b9a1-9c145921baba",
+						"photo"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "redact_photo",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "photo",
+							"type": "file",
+							"src": "/home/krichi/Downloads/res/images/IMG_20250923_111704_949.jpg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://127.0.0.1:3000/inventory/fb983d7a-7669-4add-b9a1-9c145921baba/photo",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"fb983d7a-7669-4add-b9a1-9c145921baba",
+						"photo"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "remove_inventory",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:3000/inventory/fb983d7a-7669-4add-b9a1-9c145921baba",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"fb983d7a-7669-4add-b9a1-9c145921baba"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "search",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "id",
+							"value": "77f1388b-e18d-4185-b55b-215724b3e5e4",
+							"type": "text"
+						},
+						{
+							"key": "has_photo",
+							"value": "true",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://127.0.0.1:3000/search",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "3000",
+					"path": [
+						"search"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
