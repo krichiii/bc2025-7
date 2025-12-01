@@ -1,273 +1,313 @@
+// ---------------------------------------------
+// Load environment variables
+// ---------------------------------------------
+require('dotenv').config();
+
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { program } = require('commander');
 const express = require('express');
 const multer = require('multer');
-const { v4: uuidv4 } = require('uuid');
+const cors = require('cors');
+const mysql = require('mysql2/promise');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
+const { v4: uuidv4 } = require('uuid');
 
-program //commander cli params
-  .requiredOption('-h, --host <host>', 'server host')
-  .requiredOption('-p, --port <port>', 'server port', parseInt)
-  .requiredOption('-c, --cache <cacheDir>', 'cache directory')
-  .configureOutput({
-    outputError: (str, write) => {
-      switch(true) {
-        case (str.includes('--host')): 
-          write('please specify server host\n')
-          break
-        case (str.includes('--port')):
-          write('please specify server port\n')
-          break
-        default: write(str);
-      }
-    }
-  });
+// ---------------------------------------------
+// CONFIG
+// ---------------------------------------------
+const HOST = process.env.HOST || "0.0.0.0";
+const PORT = Number(process.env.PORT || 3000);
+const CACHE_DIR = process.env.CACHE_DIR || "./cache";
 
-program.parse();
-const options = program.opts();
+// ---------------------------------------------
+// DB connection pool (MariaDB)
+// ---------------------------------------------
+const pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+});
 
-const HOST = options.host;
-const PORT = options.port;
-const CACHE_DIR = path.resolve(options.cache);
+// ---------------------------------------------
+// Ensure cache directories exist
+// ---------------------------------------------
+if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
-if (!fs.existsSync(CACHE_DIR)) { // cache dir
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-}
+const PHOTOS_DIR = path.join(CACHE_DIR, "photos");
+if (!fs.existsSync(PHOTOS_DIR)) fs.mkdirSync(PHOTOS_DIR, { recursive: true });
 
-const PHOTOS_DIR = path.join(CACHE_DIR, 'photos');
-if (!fs.existsSync(PHOTOS_DIR)) {
-  fs.mkdirSync(PHOTOS_DIR, { recursive: true });
-}
-
-const DB_FILE = path.join(CACHE_DIR, 'inventory.json');
-
-let db = {}; // init db
-if (fs.existsSync(DB_FILE)) {
-  try {
-    db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8') || '{}');
-  } catch (err) {
-    console.error('Error reading DB. Starting empty DB...');
-    db = { items: [] };
-  }
-} else {
-  db = { items: [] };
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-function saveDb() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-function findItem(id) {
-  return db.items.find(i => i.id === id);
-}
-
-const app = express(); //express.js
-
+// ---------------------------------------------
+// Express app
+// ---------------------------------------------
+const app = express();
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const storage = multer.diskStorage({ //multer storage
-  destination: (req, file, cb) => cb(null, PHOTOS_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
-    const fname = uuidv4() + ext;
-    cb(null, fname);
-  }
+// ---------------------------------------------
+// Multer (file upload)
+// ---------------------------------------------
+const storage = multer.diskStorage({
+    destination: (_, __, cb) => cb(null, PHOTOS_DIR),
+    filename: (_, file, cb) => {
+        const ext = path.extname(file.originalname) || ".jpg";
+        cb(null, uuidv4() + ext);
+    }
 });
 const upload = multer({ storage });
 
-app.get('/RegisterForm.html', (req, res) =>
-  res.sendFile(path.join(process.cwd(), 'RegisterForm.html'))
-);
-
-app.get('/SearchForm.html', (req, res) =>
-  res.sendFile(path.join(process.cwd(), 'SearchForm.html'))
-);
-
-function allowMethods(methods) { //methods restriction
-  return (req, res, next) => {
-    if (!methods.includes(req.method)) {
-      res.set('Allow', methods.join(', '));
-      return res.status(405).send('Method Not Allowed');
-    }
-    next();
-  };
+// ---------------------------------------------
+// Helper: check allowed methods
+// ---------------------------------------------
+function allowMethods(methods) {
+    return (req, res, next) => {
+        if (!methods.includes(req.method)) {
+            res.set('Allow', methods.join(', '));
+            return res.status(405).send('Method Not Allowed');
+        }
+        next();
+    };
 }
 
-app.post('/register', allowMethods(['POST']), upload.single('photo'), (req, res) => { //url queries
-  const name = req.body.inventory_name;
-  const desc = req.body.description || '';
+// ---------------------------------------------
+// Static HTML forms
+// ---------------------------------------------
+app.get("/RegisterForm.html", (req, res) =>
+    res.sendFile(path.join(process.cwd(), "RegisterForm.html"))
+);
 
-  if (!name) {
-    return res.status(400).json({ error: 'inventory_name is required' });
-  }
+app.get("/SearchForm.html", (req, res) =>
+    res.sendFile(path.join(process.cwd(), "SearchForm.html"))
+);
 
-  const id = uuidv4();
-  const file = req.file ? req.file.filename : null;
+// ---------------------------------------------
+// API ENDPOINTS
+// ---------------------------------------------
 
-  const item = {
-    id,
-    name,
-    description: desc,
-    photo: file ? `/inventory/${id}/photo` : null,
-    storedFileName: file
-  };
+// REGISTER (POST /register)
+app.post("/register", allowMethods(["POST"]), upload.single("photo"), async (req, res) => {
+    const name = req.body.inventory_name;
+    const desc = req.body.description || "";
 
-  db.items.push(item);
-  saveDb();
+    if (!name)
+        return res.status(400).json({ error: "inventory_name is required" });
 
-  const { storedFileName, ...publicData } = item;
-  res.status(201).json(publicData);
+    const id = uuidv4();
+    const photoFile = req.file ? req.file.filename : null;
+
+    await pool.execute(
+        "INSERT INTO inventory (id, name, description, photo_path) VALUES (?, ?, ?, ?)",
+        [id, name, desc, photoFile]
+    );
+
+    res.status(201).json({
+        id,
+        name,
+        description: desc,
+        photo: photoFile ? `/inventory/${id}/photo` : null
+    });
 });
 
-app.get('/inventory', allowMethods(['GET']), (req, res) => {
-  const items = db.items.map(({ storedFileName, ...publicInfo }) => publicInfo);
-  res.status(200).json(items);
+// GET ALL (GET /inventory)
+app.get("/inventory", allowMethods(["GET"]), async (req, res) => {
+    const [rows] = await pool.execute("SELECT * FROM inventory");
+
+    const formatted = rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        photo: r.photo_path ? `/inventory/${r.id}/photo` : null
+    }));
+
+    res.json(formatted);
 });
 
-app.get('/inventory/:id', allowMethods(['GET']), (req, res) => {
-  const item = findItem(req.params.id);
-  if (!item) return res.status(404).send('Not found');
+// GET BY ID (GET /inventory/:id)
+app.get("/inventory/:id", allowMethods(["GET"]), async (req, res) => {
+    const id = req.params.id;
 
-  const { storedFileName, ...publicData } = item;
-  res.status(200).json(publicData);
+    const [rows] = await pool.execute(
+        "SELECT * FROM inventory WHERE id = ?",
+        [id]
+    );
+
+    if (rows.length === 0)
+        return res.status(404).send("Not found");
+
+    const item = rows[0];
+
+    res.json({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        photo: item.photo_path ? `/inventory/${item.id}/photo` : null
+    });
 });
 
-app.put('/inventory/:id', allowMethods(['PUT']), (req, res) => {
-  const item = findItem(req.params.id);
-  if (!item) return res.status(404).send('Not found');
+// UPDATE (PUT /inventory/:id)
+app.put("/inventory/:id", allowMethods(["PUT"]), async (req, res) => {
+    const id = req.params.id;
 
-  if (req.body.name) item.name = req.body.name;
-  if (req.body.description) item.description = req.body.description;
+    const [rows] = await pool.execute(
+        "SELECT * FROM inventory WHERE id = ?", [id]
+    );
+    if (rows.length === 0)
+        return res.status(404).send("Not found");
 
-  saveDb();
+    const name = req.body.name || rows[0].name;
+    const description = req.body.description || rows[0].description;
 
-  const { storedFileName, ...publicData } = item;
-  res.status(200).json(publicData);
+    await pool.execute(
+        "UPDATE inventory SET name = ?, description = ? WHERE id = ?",
+        [name, description, id]
+    );
+
+    res.json({
+        id,
+        name,
+        description,
+        photo: rows[0].photo_path ? `/inventory/${id}/photo` : null
+    });
 });
 
-app.get('/inventory/:id/photo', allowMethods(['GET']), (req, res) => {
-  const item = findItem(req.params.id);
-  if (!item || !item.storedFileName) return res.status(404).send('Not found');
+// GET PHOTO (GET /inventory/:id/photo)
+app.get("/inventory/:id/photo", allowMethods(["GET"]), async (req, res) => {
+    const id = req.params.id;
 
-  const file = path.join(PHOTOS_DIR, item.storedFileName);
-  if (!fs.existsSync(file)) return res.status(404).send('Not found');
+    const [rows] = await pool.execute(
+        "SELECT photo_path FROM inventory WHERE id = ?",
+        [id]
+    );
 
-  res.set('Content-Type', 'image/jpeg');
-  fs.createReadStream(file).pipe(res);
+    if (rows.length === 0 || !rows[0].photo_path)
+        return res.status(404).send("Not found");
+
+    const file = path.join(PHOTOS_DIR, rows[0].photo_path);
+    if (!fs.existsSync(file))
+        return res.status(404).send("Not found");
+
+    res.set("Content-Type", "image/jpeg");
+    fs.createReadStream(file).pipe(res);
 });
 
-app.put('/inventory/:id/photo', allowMethods(['PUT']), upload.single('photo'), (req, res) => {
-  const item = findItem(req.params.id);
-  if (!item) return res.status(404).send('Not found');
+// UPDATE PHOTO (PUT /inventory/:id/photo)
+app.put("/inventory/:id/photo", allowMethods(["PUT"]), upload.single("photo"), async (req, res) => {
+    const id = req.params.id;
 
-  if (!req.file) return res.status(400).send('No file uploaded');
+    const [rows] = await pool.execute(
+        "SELECT photo_path FROM inventory WHERE id = ?",
+        [id]
+    );
+    if (rows.length === 0)
+        return res.status(404).send("Not found");
 
-  if (item.storedFileName) {
-    const p = path.join(PHOTOS_DIR, item.storedFileName); //delete file
-    if (fs.existsSync(p)) fs.unlinkSync(p);
-  }
+    const oldPhoto = rows[0].photo_path;
 
-  item.storedFileName = req.file.filename;
-  item.photo = `/inventory/${item.id}/photo`;
+    if (!req.file)
+        return res.status(400).send("No file uploaded");
 
-  saveDb();
-
-  const { storedFileName, ...publicData } = item;
-  res.status(200).json(publicData);
-});
-
-app.delete('/inventory/:id', allowMethods(['DELETE']), (req, res) => {
-  const idx = db.items.findIndex(i => i.id === req.params.id);
-  if (idx === -1) return res.status(404).send('Not found');
-
-  const item = db.items[idx];
-
-  if (item.storedFileName) {
-    const file = path.join(PHOTOS_DIR, item.storedFileName); //rm photo
-    if (fs.existsSync(file)) fs.unlinkSync(file);
-  }
-
-  db.items.splice(idx, 1);
-  saveDb();
-
-  res.status(200).json({ message: 'Deleted' });
-});
-
-app.post('/search', allowMethods(['POST']), (req, res) => { //search post
-  const id = req.body.id;
-  const hp = req.body.has_photo;
-
-  if (!id) return res.status(400).send('id required');
-
-  const item = findItem(id);
-  if (!item) return res.status(404).send('Not found');
-
-  let description = item.description;
-  if (hp && item.photo) {
-    description += ` Photo: ${item.photo}`;
-  }
-
-  res.status(200).json({
-    id: item.id,
-    name: item.name,
-    description
-  });
-});
-
-app.get('/search', allowMethods(['GET']), (req, res) => { //search get
-  const id = req.query.id;
-  const hp = req.query.includePhoto;
-
-  if (!id) return res.status(400).send('id required');
-
-  const item = findItem(id);
-  if (!item) return res.status(404).send('Not found');
-
-  let description = item.description;
-  if (hp && item.photo) {
-    description += ` Photo: ${item.photo}`;
-  }
-
-  res.status(200).json({
-    id: item.id,
-    name: item.name,
-    description
-  });
-});
-
-const swaggerDefinition = { //swagger
-  openapi: "3.0.0",
-  info: {
-    title: "Inventory Service API",
-    version: "1.0.0",
-    description: "API documentation for Inventory Lab #6"
-  },
-  servers: [
-    {
-      url: `http://${HOST}:${PORT}`,
-      description: "Local server"
+    if (oldPhoto) {
+        const oldFile = path.join(PHOTOS_DIR, oldPhoto);
+        if (fs.existsSync(oldFile))
+            fs.unlinkSync(oldFile);
     }
-  ]
+
+    await pool.execute(
+        "UPDATE inventory SET photo_path = ? WHERE id = ?",
+        [req.file.filename, id]
+    );
+
+    res.json({
+        id,
+        photo: `/inventory/${id}/photo`
+    });
+});
+
+// DELETE (DELETE /inventory/:id)
+app.delete("/inventory/:id", allowMethods(["DELETE"]), async (req, res) => {
+    const id = req.params.id;
+
+    const [rows] = await pool.execute(
+        "SELECT photo_path FROM inventory WHERE id = ?",
+        [id]
+    );
+    if (rows.length === 0)
+        return res.status(404).send("Not found");
+
+    const photo = rows[0].photo_path;
+
+    if (photo) {
+        const p = path.join(PHOTOS_DIR, photo);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
+
+    await pool.execute("DELETE FROM inventory WHERE id = ?", [id]);
+
+    res.json({ message: "Deleted" });
+});
+
+// SEARCH (POST /search)
+app.post("/search", allowMethods(["POST"]), async (req, res) => {
+    const id = req.body.id;
+    const hasPhoto = req.body.has_photo;
+
+    if (!id) return res.status(400).send("id required");
+
+    const [rows] = await pool.execute(
+        "SELECT * FROM inventory WHERE id = ?",
+        [id]
+    );
+    if (rows.length === 0) return res.status(404).send("Not found");
+
+    const item = rows[0];
+    let description = item.description;
+
+    if (hasPhoto && item.photo_path)
+        description += ` Photo: /inventory/${id}/photo`;
+
+    res.json({
+        id: item.id,
+        name: item.name,
+        description
+    });
+});
+
+// ---------------------------------------------
+// Swagger setup
+// ---------------------------------------------
+const swaggerDefinition = {
+    openapi: "3.0.0",
+    info: {
+        title: "Inventory Service API",
+        version: "1.0.0",
+        description: "API documentation for Inventory Lab #6 (MariaDB)"
+    },
+    servers: [
+        { url: `http://localhost:${PORT}` }
+    ]
 };
 
 const swaggerOptions = {
-  swaggerDefinition,
-  apis: ["./swagger/*.yaml"] 
+    swaggerDefinition,
+    apis: ["./swagger/*.yaml"]
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
-// console.log('Swagger spec paths:', swaggerSpec.paths); //swagger debug
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-app.use((req, res) => res.status(404).send('Not found')); //unk routes
-
+// ---------------------------------------------
+// Start HTTP server
+// ---------------------------------------------
 const server = http.createServer(app);
+
 server.listen(PORT, HOST, () => {
-  console.log(`Running on http://${HOST}:${PORT}`); //start server
-  console.log(`Cache directory: ${CACHE_DIR}`);
+    console.log(`Server running at http://${HOST}:${PORT}`);
+    console.log("MariaDB connected at:", process.env.DB_HOST);
 });
+
+
+// placeholder test
